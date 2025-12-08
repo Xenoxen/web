@@ -53,6 +53,8 @@ docker run --name ocap-web -d \
   ghcr.io/ocap2/web:latest
 ```
 
+docker run --name ocap-web -d -p 5000:5000/tcp -e OCAP_SECRET="secrettest" -v ocap-records:/var/lib/ocap/data -v ocap-maps:/var/lib/ocap/maps -v ocap-database:/var/lib/ocap/db ocap-webserver
+
 ## Build from source
 
 This Project is based on [Golang](https://golang.org/dl/)

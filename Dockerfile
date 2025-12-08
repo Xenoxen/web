@@ -1,6 +1,12 @@
-FROM golang:1.20-alpine as builder
+FROM golang:1.25.5-alpine AS builder
 WORKDIR /go/pkg/ocap
-COPY . .
+
+COPY cmd/ ./cmd \
+        server/ ./server \
+        go.mod . \
+        go.sum ./
+
+
 ARG build_commit
 RUN apk add --no-cache alpine-sdk && go build -ldflags "-X github.com/OCAP2/web/server.BuildDate=`date -u +'%Y-%m-%dT%H:%M:%SZ'` -X github.com/OCAP2/web/server.BuildCommit=$build_commit" -a -o app ./cmd
 
@@ -9,20 +15,25 @@ WORKDIR /usr/local/ocap
 RUN mkdir -p /etc/ocap /usr/local/ocap/data /var/lib/ocap/db /var/lib/ocap/maps /var/lib/ocap/data && \
     echo '{}' > /etc/ocap/setting.json
 
-ENV OCAP_MARKERS /usr/local/ocap/markers
-ENV OCAP_AMMO /usr/local/ocap/ammo
-ENV OCAP_STATIC /usr/local/ocap/static
+ENV OCAP_MARKERS=/usr/local/ocap/markers
+ENV OCAP_AMMO=/usr/local/ocap/ammo
+ENV OCAP_STATIC=/usr/local/ocap/static
 
-ENV OCAP_DB /var/lib/ocap/db/data.db
-ENV OCAP_MAPS /var/lib/ocap/maps
-ENV OCAP_DATA /var/lib/ocap/data
+ENV OCAP_DB=/var/lib/ocap/db/data.db
+ENV OCAP_MAPS=/var/lib/ocap/maps
+ENV OCAP_DATA=/var/lib/ocap/data
 
-ENV OCAP_LISTEN 0.0.0.0:5000
+ENV OCAP_LISTEN=0.0.0.0:5000
 EXPOSE 5000/tcp
 
 COPY markers /usr/local/ocap/markers
 COPY ammo /usr/local/ocap/ammo
 COPY static /usr/local/ocap/static
+
+# For development only
+COPY data /var/lib/ocap/data
+COPY data.db /var/lib/ocap/db/data.db
+
 COPY --from=builder /go/pkg/ocap/app /usr/local/ocap/app
 
 CMD ["/usr/local/ocap/app"]
