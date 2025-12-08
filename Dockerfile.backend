@@ -1,0 +1,17 @@
+FROM golang:1.25.5-alpine
+WORKDIR /go/pkg/ocap
+
+RUN apk add --no-cache alpine-sdk
+RUN go install github.com/air-verse/air@latest
+
+COPY go.mod .
+COPY go.sum ./
+RUN go mod download
+
+# Create necessary directories
+RUN mkdir -p /etc/ocap /usr/local/ocap/data /var/lib/ocap/db /var/lib/ocap/maps /var/lib/ocap/data && \
+    echo '{}' > /etc/ocap/setting.json
+
+EXPOSE 5000
+
+CMD ["air", "-c", ".air.toml"]

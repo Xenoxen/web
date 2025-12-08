@@ -40,6 +40,16 @@ func app() error {
 
 	e := echo.New()
 
+	// Add CORS middleware (Development only)
+	if os.Getenv("OCAP_ENV") == "development" {
+		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+			AllowOrigins:     []string{"http://localhost:3000"},
+			AllowMethods:     []string{echo.GET, echo.HEAD, echo.PUT, echo.PATCH, echo.POST, echo.DELETE},
+			AllowCredentials: true,
+		}))
+	}
+
+	// Logger
 	loggerConfig := middleware.DefaultLoggerConfig
 	if setting.Logger {
 		flog, err := os.OpenFile("ocap.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)

@@ -17,12 +17,14 @@ export default function Missions() {
   const newer = "2017-06-01";
   const older = "2099-12-12";
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
   const {
     data,
     error = null,
     isLoading,
   } = useSWR(
-    `api/v1/operations?tag=${tag}&name=${name}&newer=${newer}&older=${older}`,
+    `${apiUrl}/operations?tag=${tag}&name=${name}&newer=${newer}&older=${older}`,
     fetcher
   );
 

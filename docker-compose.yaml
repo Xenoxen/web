@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: ocap2-backend
+    ports:
+      - "5000:5000"
+    environment:
+      - OCAP_ENV=development
+      - OCAP_MARKERS=/usr/local/ocap/markers
+      - OCAP_AMMO=/usr/local/ocap/ammo
+      - OCAP_STATIC=/usr/local/ocap/static
+      - OCAP_DB=/var/lib/ocap/db/data.db
+      - OCAP_MAPS=/var/lib/ocap/maps
+      - OCAP_DATA=/var/lib/ocap/data
+      - OCAP_LISTEN=0.0.0.0:5000
+      - OCAP_SECRET=${OCAP_SECRET}
+    volumes:
+      - .air.toml:/go/pkg/ocap/.air.toml
+      - ./cmd:/go/pkg/ocap/cmd
+      - ./server:/go/pkg/ocap/server
+      - ./go.mod:/go/pkg/ocap/go.mod
+      - ./go.sum:/go/pkg/ocap/go.sum
+      - ./markers:/usr/local/ocap/markers
+      - ./ammo:/usr/local/ocap/ammo
+      - ./data:/var/lib/ocap/data
+      - ./data.db:/var/lib/ocap/db/data.db
+      - ocap_maps:/var/lib/ocap/maps
+      - frontend_dist:/usr/local/ocap/static
+    networks:
+      - ocap-network
+    depends_on:
+      - frontend
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ocap2-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app/frontend
+      - frontend_dist:/app/frontend/build
+      - /app/frontend/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    networks:
+      - ocap-network
+    command: yarn dev
+
+volumes:
+  ocap_maps:
+  frontend_dist:
+
+networks:
+  ocap-network:
+    driver: bridge
