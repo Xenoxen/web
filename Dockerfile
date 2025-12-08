@@ -1,11 +1,20 @@
-FROM golang:1.25.5-alpine AS builder
+FROM node:23.6-alpine AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN yarn
+COPY frontend/ ./
+RUN yarn build
+
+# After build, move the output to /app/static
+RUN mkdir -p /app/static && cp -r build /app/static
+
+FROM golang:1.25.5-alpine AS backend-builder
 WORKDIR /go/pkg/ocap
 
-COPY cmd/ ./cmd \
-        server/ ./server \
-        go.mod . \
-        go.sum ./
-
+COPY cmd/ ./cmd
+COPY server/ ./server
+COPY go.mod .
+COPY go.sum ./
 
 ARG build_commit
 RUN apk add --no-cache alpine-sdk && go build -ldflags "-X github.com/OCAP2/web/server.BuildDate=`date -u +'%Y-%m-%dT%H:%M:%SZ'` -X github.com/OCAP2/web/server.BuildCommit=$build_commit" -a -o app ./cmd
@@ -28,12 +37,14 @@ EXPOSE 5000/tcp
 
 COPY markers /usr/local/ocap/markers
 COPY ammo /usr/local/ocap/ammo
-COPY static /usr/local/ocap/static
+
+# Copy built frontend from frontend-builder stage
+COPY --from=frontend-builder /app/static/build /usr/local/ocap/static
 
 # For development only
 COPY data /var/lib/ocap/data
 COPY data.db /var/lib/ocap/db/data.db
 
-COPY --from=builder /go/pkg/ocap/app /usr/local/ocap/app
+COPY --from=backend-builder /go/pkg/ocap/app /usr/local/ocap/app
 
 CMD ["/usr/local/ocap/app"]

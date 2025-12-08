@@ -6,9 +6,10 @@ import useSWR from "swr";
 // Components
 import MissionsCollection from "@/app/missions/components/client/MissionsCollection";
 
-const fetcher = (url: string) => fetch(url, {
-  credentials: "include",
-}).then((res) => res.json());
+const fetcher = (url: string) =>
+  fetch(url, {
+    credentials: "include",
+  }).then((res) => res.json());
 
 export default function Missions() {
   const tag = "";
@@ -21,7 +22,7 @@ export default function Missions() {
     error = null,
     isLoading,
   } = useSWR(
-    `${process.env.NEXT_PUBLIC_API_URL}/operations?tag=${tag}&name=${name}&newer=${newer}&older=${older}`,
+    `api/v1/operations?tag=${tag}&name=${name}&newer=${newer}&older=${older}`,
     fetcher
   );
 

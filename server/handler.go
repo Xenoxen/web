@@ -289,6 +289,18 @@ func (h *Handler) GetStatic(c echo.Context) error {
 
 	absolutePath := filepath.Join(h.setting.Static, relativePath)
 
+	// Check if file exists
+	if _, err := os.Stat(absolutePath); os.IsNotExist(err) {
+		// For SPA routing, serve index.html for non-API routes
+		if !strings.HasPrefix(relativePath, "api/") &&
+			!strings.HasPrefix(relativePath, "_next/") &&
+			!strings.Contains(relativePath, ".") {
+			indexPath := filepath.Join(h.setting.Static, "index.html")
+			return c.File(indexPath)
+		}
+		return fmt.Errorf("file not found: %w", ErrNotFound)
+	}
+
 	return c.File(absolutePath)
 }
 

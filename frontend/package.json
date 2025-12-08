@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:static": "rm -rf ../static/_next && rm -rf ../static/*.html && next build",
     "start": "next start",
     "lint": "next lint"
   },
