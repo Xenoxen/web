@@ -4,7 +4,7 @@ import debounce from "debounce";
 import { useEffect, useState } from "react";
 
 // Components
-import OperationCard from "@/app/operations/components/client/OperationCard";
+import OperationCard from "@/app/client/OperationCard";
 
 // Types
 import type { ChangeEvent } from "react";
