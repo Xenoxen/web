@@ -2,9 +2,15 @@
 
 import Link from "next/link";
 import useSWR from "swr";
+import { useEffect } from "react";
 
 // Components
-import MissionsCollection from "@/app/missions/components/client/MissionsCollection";
+import OperationsCollection from "@/app/operations/components/client/OperationsCollection";
+
+// Jotai
+import { useSetAtom } from "jotai";
+import { setOperationsAtom } from "@/atoms/operations.atom";
+import { Operation } from "@/types";
 
 const fetcher = (url: string) =>
   fetch(url, {
@@ -28,6 +34,16 @@ export default function Missions() {
     fetcher
   );
 
+  const setOperations = useSetAtom(setOperationsAtom);
+
+  useEffect(() => {
+    // Filter data by date (DESC)
+    const operations = data?.sort((a: Operation, b: Operation) => {
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+    setOperations(operations || []);
+  }, [data, setOperations]);
+
   // Loading screen
   if (isLoading) {
     return (
@@ -45,8 +61,6 @@ export default function Missions() {
       </main>
     );
   }
-
-  console.info("Missions data:", data);
 
   return (
     <main className="h-full">
@@ -73,7 +87,7 @@ export default function Missions() {
         </div>
 
         {/* Missions */}
-        <MissionsCollection data={data} />
+        <OperationsCollection />
       </div>
     </main>
   );

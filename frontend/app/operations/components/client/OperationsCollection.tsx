@@ -1,36 +1,38 @@
 "use client";
 
-import { useState } from "react";
-
 // Components
-import Mission from "./Mission";
+import OperationCard from "@/app/operations/components/client/OperationCard";
 
 // Types
-import type { mission } from "@/app/missions/types";
 import type { ChangeEvent } from "react";
 
-export default function MissionsCollection({ data = [] }: { data: mission[] }) {
-  const [missions, setMissions] = useState<mission[]>(data);
+// Jotai
+import { useAtom } from "jotai";
+import { operationsAtom } from "@/atoms/operations.atom";
+import { Operation } from "@/types";
+
+export default function OperationsCollection() {
+  const [operations, setOperations] = useAtom(operationsAtom);
 
   const filter = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
     type: string
   ) => {
     const value = e.target.value.toLowerCase();
-    let filtered: mission[] = [];
+    let filtered: Operation[] = [];
 
     switch (type) {
       case "tag":
-        filtered = data.filter((mission) => {
-          return mission.tag.toLowerCase().includes(value);
+        filtered = operations.filter((operation) => {
+          return operation.tag.toLowerCase().includes(value);
         });
-        setMissions(filtered);
+        setOperations(filtered);
         break;
 
       default:
         break;
     }
-    setMissions(filtered);
+    setOperations(filtered);
   };
 
   return (
@@ -61,12 +63,12 @@ export default function MissionsCollection({ data = [] }: { data: mission[] }) {
           />
         </div>
       </div>
-      {missions.length > 0 ? (
+      {operations?.length > 0 ? (
         <div className="grid grid-cols-12 gap-4 overflow-y-auto max-h-full">
-          {missions.map((mission: mission) => {
+          {operations.map((operation: Operation) => {
             return (
-              <div className="col-span-4">
-                <Mission data={mission} />
+              <div key={operation.id} className="col-span-4">
+                <OperationCard data={operation} />
               </div>
             );
           })}
