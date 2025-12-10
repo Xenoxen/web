@@ -1,5 +1,8 @@
 "use client";
 
+import debounce from "debounce";
+import { useEffect, useState } from "react";
+
 // Components
 import OperationCard from "@/app/operations/components/client/OperationCard";
 
@@ -7,12 +10,18 @@ import OperationCard from "@/app/operations/components/client/OperationCard";
 import type { ChangeEvent } from "react";
 
 // Jotai
-import { useAtom } from "jotai";
+import { useAtomValue } from "jotai";
 import { operationsAtom } from "@/atoms/operations.atom";
 import { Operation } from "@/types";
 
 export default function OperationsCollection() {
-  const [operations, setOperations] = useAtom(operationsAtom);
+  const operations = useAtomValue(operationsAtom);
+  const [filteredOperations, setFilteredOperations] =
+    useState<Operation[]>(operations);
+
+  useEffect(() => {
+    setFilteredOperations(operations);
+  }, [operations]);
 
   const filter = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
@@ -26,13 +35,26 @@ export default function OperationsCollection() {
         filtered = operations.filter((operation) => {
           return operation.tag.toLowerCase().includes(value);
         });
-        setOperations(filtered);
+        setFilteredOperations(filtered);
         break;
 
       default:
         break;
     }
-    setOperations(filtered);
+    setFilteredOperations(filtered);
+  };
+
+  // Debounced search handler
+  const debouncedSearch = debounce((val: string) => {
+    const filtered = operations.filter((operation) => {
+      return operation.mission_name.toLowerCase().includes(val);
+    });
+    setFilteredOperations(filtered);
+  }, 300);
+
+  const onSearch = (e: ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.toLowerCase();
+    debouncedSearch(val);
   };
 
   return (
@@ -43,7 +65,7 @@ export default function OperationsCollection() {
             className="bg-gray-900 text-white p-2 rounded-lg"
             onChange={(e) => filter(e, "tag")}
           >
-            <option value="all">All</option>
+            <option value="">All</option>
             <option value="active">Active</option>
             <option value="completed">Completed</option>
             <option value="failed">Failed</option>
@@ -52,6 +74,7 @@ export default function OperationsCollection() {
             type="text"
             placeholder="Search"
             className="w-full bg-gray-900 text-white p-2 rounded-lg"
+            onChange={onSearch}
           />
           <input
             type="date"
@@ -63,9 +86,9 @@ export default function OperationsCollection() {
           />
         </div>
       </div>
-      {operations?.length > 0 ? (
+      {filteredOperations?.length > 0 ? (
         <div className="grid grid-cols-12 gap-4 overflow-y-auto max-h-full">
-          {operations.map((operation: Operation) => {
+          {filteredOperations.map((operation: Operation) => {
             return (
               <div key={operation.id} className="col-span-4">
                 <OperationCard data={operation} />
