@@ -41,6 +41,7 @@ export default function Missions() {
     const operations = data?.sort((a: Operation, b: Operation) => {
       return new Date(b.date).getTime() - new Date(a.date).getTime();
     });
+    console.log(operations);
     setOperations(operations || []);
   }, [data, setOperations]);
 
