@@ -1,11 +1,11 @@
 {
-	"listen": "127.0.0.1:5000",
-	"prefixURL": "/aar/",
-	"secret": "same-secret",
-	"logger": true,
-	"customize": {
-		"websiteURL": "",
-		"websiteLogo": "",
-		"disableKillCount": false
-	}
+  "listen": "127.0.0.1:5000",
+  "secret": "a3phjsftoken",
+  "logger": true,
+  "customize": {
+    "websiteURL": "https://arma-ph.net/",
+    "websiteLogo": "https://www.arma-ph.net/assets/img/logo.png",
+    "websiteLogoSize": "128px",
+    "disableKillCount": true
+  }
 }
