@@ -66,6 +66,10 @@ func NewHandler(
 		hdlr.GetVersion,
 	)
 	g.GET(
+		"/api/v1/captures/:name/players",
+		hdlr.GetPlayerEvents,
+	)
+	g.GET(
 		"/data/:name",
 		hdlr.GetCapture,
 		hdlr.cacheControl(CacheDuration),
