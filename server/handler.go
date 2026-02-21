@@ -66,6 +66,14 @@ func NewHandler(
 		hdlr.GetVersion,
 	)
 	g.GET(
+		"/api/v1/players",
+		hdlr.GetAllPlayerStats,
+	)
+	g.GET(
+		"/api/v1/players/:name",
+		hdlr.GetPlayerStatsByName,
+	)
+	g.GET(
 		"/api/v1/captures/:name/players",
 		hdlr.GetPlayerEvents,
 	)
