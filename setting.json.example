@@ -1,11 +1,34 @@
 {
-  "listen": "127.0.0.1:5000",
-  "secret": "your-token-here",
-  "logger": true,
-  "customize": {
-    "websiteURL": "",
-    "websiteLogo": "",
-    "websiteLogoSize": "",
-    "disableKillCount": true
-  }
+	"listen": "127.0.0.1:5000",
+	"prefixURL": "",
+	"secret": "change-me",
+	"db": "data.db",
+	"data": "data",
+	"static": "",
+	"markers": "assets/markers",
+	"ammo": "assets/ammo",
+	"fonts": "assets/fonts",
+	"maps": "maps",
+	"logger": false,
+	"customize": {
+		"disableKillCount": false,
+		"enabled": false,
+		"headerSubtitle": "",
+		"headerTitle": "",
+		"websiteLogo": "",
+		"websiteLogoSize": "32px",
+		"websiteURL": ""
+	},
+	"conversion": {
+		"batchSize": 1,
+		"chunkSize": 300,
+		"enabled": false,
+		"interval": "5m",
+		"retryFailed": false
+	},
+	"streaming": {
+		"enabled": false,
+		"pingInterval": "30s",
+		"pingTimeout": "10s"
+	}
 }

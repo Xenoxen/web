@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -339,7 +340,7 @@ func paramPath(c echo.Context, param string) (string, error) {
 		return "", fmt.Errorf("path unescape: %w", err)
 	}
 
-	cleanPath := filepath.Clean("/" + urlPath)
+	cleanPath := path.Clean("/" + urlPath)
 	if cleanPath != "/"+urlPath {
 		return "", ErrInvalidPath
 	}

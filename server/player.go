@@ -8,8 +8,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/labstack/echo/v4"
 )
@@ -189,32 +191,51 @@ func processPlayerEvents(path string) ([]PlayerEventSummary, error) {
 	return players, nil
 }
 
-// processAllPlayerEvents iterates every .gz file in dataDir, processes player
-// events for each, and merges results by player name across all captures.
+// fileResult holds the output of processing a single capture file.
+type fileResult struct {
+	players []PlayerEventSummary
+}
+
+// processAllPlayerEvents iterates every .gz file in dataDir concurrently,
+// processes player events for each, and merges results by player name.
 func processAllPlayerEvents(dataDir string) ([]PlayerEventSummary, error) {
 	files, err := filepath.Glob(filepath.Join(dataDir, "*.gz"))
 	if err != nil {
 		return nil, fmt.Errorf("glob data dir: %w", err)
 	}
 
-	// Keyed by player name; IDs are per-capture so name is the stable identity.
+	// Process files concurrently with a worker pool.
+	results := make([]fileResult, len(files))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, runtime.NumCPU())
+
+	for i, path := range files {
+		wg.Add(1)
+		go func(idx int, filePath string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			players, err := processPlayerEvents(filePath)
+			if err != nil {
+				return
+			}
+			results[idx] = fileResult{players: players}
+		}(i, path)
+	}
+	wg.Wait()
+
+	// Merge all results sequentially (no lock needed, goroutines are done).
 	merged := make(map[string]*PlayerEventSummary)
-
-	for _, path := range files {
-		players, err := processPlayerEvents(path)
-		if err != nil {
-			// Skip unreadable/malformed files rather than aborting entirely.
-			continue
-		}
-
-		for i := range players {
-			p := &players[i]
+	for _, r := range results {
+		for i := range r.players {
+			p := &r.players[i]
 			acc, exists := merged[p.Name]
 			if !exists {
-				copy := *p
-				copy.WeaponStats = make([]PlayerWeaponStat, len(p.WeaponStats))
-				_ = copy_weaponStats(copy.WeaponStats, p.WeaponStats)
-				merged[p.Name] = &copy
+				cp := *p
+				cp.WeaponStats = make([]PlayerWeaponStat, len(p.WeaponStats))
+				_ = copy_weaponStats(cp.WeaponStats, p.WeaponStats)
+				merged[p.Name] = &cp
 				continue
 			}
 
@@ -258,35 +279,52 @@ func copy_weaponStats(dst, src []PlayerWeaponStat) int {
 	return copy(dst, src)
 }
 
-// processPlayerEventsByName iterates every .gz file in dataDir and returns
-// a single aggregated PlayerEventSummary for the player matching playerName
-// (case-insensitive). Returns nil if no matching player is found.
+// processPlayerEventsByName iterates every .gz file in dataDir concurrently
+// and returns a single aggregated PlayerEventSummary for the player matching
+// playerName (case-insensitive). Returns nil if no matching player is found.
 func processPlayerEventsByName(dataDir, playerName string) (*PlayerEventSummary, error) {
 	files, err := filepath.Glob(filepath.Join(dataDir, "*.gz"))
 	if err != nil {
 		return nil, fmt.Errorf("glob data dir: %w", err)
 	}
 
+	// Process files concurrently with a worker pool.
+	results := make([]fileResult, len(files))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, runtime.NumCPU())
+
+	for i, path := range files {
+		wg.Add(1)
+		go func(idx int, filePath string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			players, err := processPlayerEvents(filePath)
+			if err != nil {
+				return
+			}
+			results[idx] = fileResult{players: players}
+		}(i, path)
+	}
+	wg.Wait()
+
+	// Merge matching players sequentially.
 	normalised := strings.ToLower(playerName)
 	var acc *PlayerEventSummary
 
-	for _, path := range files {
-		players, err := processPlayerEvents(path)
-		if err != nil {
-			continue
-		}
-
-		for i := range players {
-			p := &players[i]
+	for _, r := range results {
+		for i := range r.players {
+			p := &r.players[i]
 			if !strings.Contains(strings.ToLower(p.Name), normalised) {
 				continue
 			}
 
 			if acc == nil {
-				copy := *p
-				copy.WeaponStats = make([]PlayerWeaponStat, len(p.WeaponStats))
-				_ = copy_weaponStats(copy.WeaponStats, p.WeaponStats)
-				acc = &copy
+				cp := *p
+				cp.WeaponStats = make([]PlayerWeaponStat, len(p.WeaponStats))
+				_ = copy_weaponStats(cp.WeaponStats, p.WeaponStats)
+				acc = &cp
 				continue
 			}
 
