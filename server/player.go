@@ -23,13 +23,11 @@ import (
 // Unrecognised JSON fields (group, role, framesFired) are silently skipped
 // by the decoder, avoiding large allocations for data we never use.
 type captureEntityMeta struct {
-	Type     string              `json:"type"`
-	ID       int                 `json:"id"`
-	Name     string              `json:"name"`
-	Side     string              `json:"side"`
-	IsPlayer int                 `json:"isPlayer"`
-	// Each position entry: [pos, dir, alive, isInVehicle, name, isPlayer]
-	Positions [][]json.RawMessage `json:"positions"`
+	Type     string `json:"type"`
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Side     string `json:"side"`
+	IsPlayer int    `json:"isPlayer"`
 }
 
 // ---- Output structures ----
@@ -108,27 +106,10 @@ func processPlayerEvents(path string) ([]PlayerEventSummary, error) {
 					continue
 				}
 
-				// Resolve display name from last 10 positions.
-				displayName := e.Name
-				start := len(e.Positions) - 10
-				if start < 0 {
-					start = 0
-				}
-				for i := len(e.Positions) - 1; i >= start; i-- {
-					entry := e.Positions[i]
-					if len(entry) >= 5 {
-						var name string
-						if err := json.Unmarshal(entry[4], &name); err == nil && name != "" {
-							displayName = name
-							break
-						}
-					}
-				}
-
 				playerMap[e.ID] = &playerAcc{
 					PlayerEventSummary: PlayerEventSummary{
 						ID:   e.ID,
-						Name: displayName,
+						Name: e.Name,
 						Side: e.Side,
 					},
 					weaponMap: make(map[string]int),
