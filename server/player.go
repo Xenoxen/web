@@ -2,8 +2,9 @@ package server
 
 import (
 	"compress/gzip"
-	"encoding/json"
+	json "github.com/goccy/go-json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/labstack/echo/v4"
 )
@@ -27,7 +30,6 @@ type captureEntity struct {
 	IsPlayer    int               `json:"isPlayer"`
 	Group       string            `json:"group"`
 	Role        string            `json:"role"`
-	FramesFired []json.RawMessage `json:"framesFired"`
 	// Each position entry: [pos, dir, alive, isInVehicle, name, isPlayer]
 	Positions [][]json.RawMessage `json:"positions"`
 }
@@ -85,15 +87,23 @@ func processPlayerEvents(path string) ([]PlayerEventSummary, error) {
 	}
 
 	// Build player map keyed by entity ID.
-	playerMap := make(map[int]*PlayerEventSummary, len(data.Entities))
+	type playerAcc struct {
+		PlayerEventSummary
+		weaponMap map[string]int
+	}
+	playerMap := make(map[int]*playerAcc, len(data.Entities))
 	for _, e := range data.Entities {
 		if e.Type != "unit" || e.IsPlayer != 1 {
 			continue
 		}
 
-		// Resolve display name: walk positions in reverse for the last non-empty name.
+		// Resolve display name: walk last 10 positions in reverse for the last non-empty name.
 		displayName := e.Name
-		for i := len(e.Positions) - 1; i >= 0; i-- {
+		start := len(e.Positions) - 10
+		if start < 0 {
+			start = 0
+		}
+		for i := len(e.Positions) - 1; i >= start; i-- {
 			entry := e.Positions[i]
 			if len(entry) >= 5 {
 				var name string
@@ -104,11 +114,13 @@ func processPlayerEvents(path string) ([]PlayerEventSummary, error) {
 			}
 		}
 
-		playerMap[e.ID] = &PlayerEventSummary{
-			ID:          e.ID,
-			Name:        displayName,
-			Side:        e.Side,
-			WeaponStats: []PlayerWeaponStat{},
+		playerMap[e.ID] = &playerAcc{
+			PlayerEventSummary: PlayerEventSummary{
+				ID:   e.ID,
+				Name: displayName,
+				Side: e.Side,
+			},
+			weaponMap: make(map[string]int),
 		}
 	}
 
@@ -149,19 +161,7 @@ func processPlayerEvents(path string) ([]PlayerEventSummary, error) {
 
 		if killerIsPlayer {
 			killer.KillCount++
-
-			// Accumulate weapon kill stats.
-			found := false
-			for i := range killer.WeaponStats {
-				if killer.WeaponStats[i].Weapon == weapon {
-					killer.WeaponStats[i].Kills++
-					found = true
-					break
-				}
-			}
-			if !found {
-				killer.WeaponStats = append(killer.WeaponStats, PlayerWeaponStat{Weapon: weapon, Kills: 1})
-			}
+			killer.weaponMap[weapon]++
 
 			// Team kill: killer and victim are different players on the same side.
 			if victimIsPlayer && killerID != victimID && killer.Side == victim.Side {
@@ -174,13 +174,18 @@ func processPlayerEvents(path string) ([]PlayerEventSummary, error) {
 		}
 	}
 
-	// Collect results and sort weapon stats by kills descending.
+	// Collect results: convert weapon maps to sorted slices.
 	players := make([]PlayerEventSummary, 0, len(playerMap))
 	for _, p := range playerMap {
-		sort.Slice(p.WeaponStats, func(i, j int) bool {
-			return p.WeaponStats[i].Kills > p.WeaponStats[j].Kills
+		ws := make([]PlayerWeaponStat, 0, len(p.weaponMap))
+		for weapon, kills := range p.weaponMap {
+			ws = append(ws, PlayerWeaponStat{Weapon: weapon, Kills: kills})
+		}
+		sort.Slice(ws, func(i, j int) bool {
+			return ws[i].Kills > ws[j].Kills
 		})
-		players = append(players, *p)
+		p.WeaponStats = ws
+		players = append(players, p.PlayerEventSummary)
 	}
 
 	// Sort players by kill count descending for a consistent response order.
@@ -204,9 +209,13 @@ func processAllPlayerEvents(dataDir string) ([]PlayerEventSummary, error) {
 		return nil, fmt.Errorf("glob data dir: %w", err)
 	}
 
+	totalFiles := len(files)
+	log.Printf("[player-cache] processing %d capture files using %d workers", totalFiles, runtime.NumCPU())
+
 	// Process files concurrently with a worker pool.
-	results := make([]fileResult, len(files))
+	results := make([]fileResult, totalFiles)
 	var wg sync.WaitGroup
+	var processed atomic.Int64
 	sem := make(chan struct{}, runtime.NumCPU())
 
 	for i, path := range files {
@@ -218,24 +227,46 @@ func processAllPlayerEvents(dataDir string) ([]PlayerEventSummary, error) {
 
 			players, err := processPlayerEvents(filePath)
 			if err != nil {
+				log.Printf("[player-cache] error processing %s: %v", filepath.Base(filePath), err)
+				processed.Add(1)
 				return
 			}
 			results[idx] = fileResult{players: players}
+
+			n := processed.Add(1)
+			if n%100 == 0 || n == int64(totalFiles) {
+				log.Printf("[player-cache] processed %d/%d files", n, totalFiles)
+			}
 		}(i, path)
 	}
 	wg.Wait()
 
 	// Merge all results sequentially (no lock needed, goroutines are done).
-	merged := make(map[string]*PlayerEventSummary)
+	type mergedPlayer struct {
+		PlayerEventSummary
+		weaponMap map[string]int
+	}
+	merged := make(map[string]*mergedPlayer)
 	for _, r := range results {
 		for i := range r.players {
 			p := &r.players[i]
 			acc, exists := merged[p.Name]
 			if !exists {
-				cp := *p
-				cp.WeaponStats = make([]PlayerWeaponStat, len(p.WeaponStats))
-				_ = copy_weaponStats(cp.WeaponStats, p.WeaponStats)
-				merged[p.Name] = &cp
+				wm := make(map[string]int, len(p.WeaponStats))
+				for _, ws := range p.WeaponStats {
+					wm[ws.Weapon] = ws.Kills
+				}
+				merged[p.Name] = &mergedPlayer{
+					PlayerEventSummary: PlayerEventSummary{
+						ID:            p.ID,
+						Name:          p.Name,
+						Side:          p.Side,
+						KillCount:     p.KillCount,
+						DeathCount:    p.DeathCount,
+						TeamKillCount: p.TeamKillCount,
+					},
+					weaponMap: wm,
+				}
 				continue
 			}
 
@@ -244,27 +275,22 @@ func processAllPlayerEvents(dataDir string) ([]PlayerEventSummary, error) {
 			acc.TeamKillCount += p.TeamKillCount
 
 			for _, ws := range p.WeaponStats {
-				found := false
-				for j := range acc.WeaponStats {
-					if acc.WeaponStats[j].Weapon == ws.Weapon {
-						acc.WeaponStats[j].Kills += ws.Kills
-						found = true
-						break
-					}
-				}
-				if !found {
-					acc.WeaponStats = append(acc.WeaponStats, ws)
-				}
+				acc.weaponMap[ws.Weapon] += ws.Kills
 			}
 		}
 	}
 
 	result := make([]PlayerEventSummary, 0, len(merged))
-	for _, p := range merged {
-		sort.Slice(p.WeaponStats, func(i, j int) bool {
-			return p.WeaponStats[i].Kills > p.WeaponStats[j].Kills
+	for _, m := range merged {
+		ws := make([]PlayerWeaponStat, 0, len(m.weaponMap))
+		for weapon, kills := range m.weaponMap {
+			ws = append(ws, PlayerWeaponStat{Weapon: weapon, Kills: kills})
+		}
+		sort.Slice(ws, func(i, j int) bool {
+			return ws[i].Kills > ws[j].Kills
 		})
-		result = append(result, *p)
+		m.WeaponStats = ws
+		result = append(result, m.PlayerEventSummary)
 	}
 
 	sort.Slice(result, func(i, j int) bool {
@@ -274,87 +300,107 @@ func processAllPlayerEvents(dataDir string) ([]PlayerEventSummary, error) {
 	return result, nil
 }
 
-// copy_weaponStats copies src into dst and returns the length.
-func copy_weaponStats(dst, src []PlayerWeaponStat) int {
-	return copy(dst, src)
+// ---- Player Cache ----
+
+// PlayerCache holds precomputed player statistics so that repeated HTTP
+// requests do not re-parse every capture file.
+type PlayerCache struct {
+	mu       sync.RWMutex
+	allStats []PlayerEventSummary
+	byName   map[string]*PlayerEventSummary // lowercased full name -> summary
+	built    bool
+	dataDir  string
 }
 
-// processPlayerEventsByName iterates every .gz file in dataDir concurrently
-// and returns a single aggregated PlayerEventSummary for the player matching
-// playerName (case-insensitive). Returns nil if no matching player is found.
-func processPlayerEventsByName(dataDir, playerName string) (*PlayerEventSummary, error) {
-	files, err := filepath.Glob(filepath.Join(dataDir, "*.gz"))
+// NewPlayerCache creates an empty cache for the given data directory.
+func NewPlayerCache(dataDir string) *PlayerCache {
+	return &PlayerCache{dataDir: dataDir}
+}
+
+// ensureBuilt lazily builds the cache on first access or after invalidation.
+func (c *PlayerCache) ensureBuilt() error {
+	// Fast path: already built.
+	c.mu.RLock()
+	if c.built {
+		c.mu.RUnlock()
+		return nil
+	}
+	c.mu.RUnlock()
+
+	// Slow path: acquire write lock and rebuild.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Double-check after acquiring write lock.
+	if c.built {
+		return nil
+	}
+
+	log.Println("[player-cache] building cache...")
+	start := time.Now()
+
+	stats, err := processAllPlayerEvents(c.dataDir)
 	if err != nil {
-		return nil, fmt.Errorf("glob data dir: %w", err)
+		return err
 	}
 
-	// Process files concurrently with a worker pool.
-	results := make([]fileResult, len(files))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, runtime.NumCPU())
-
-	for i, path := range files {
-		wg.Add(1)
-		go func(idx int, filePath string) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			players, err := processPlayerEvents(filePath)
-			if err != nil {
-				return
-			}
-			results[idx] = fileResult{players: players}
-		}(i, path)
+	byName := make(map[string]*PlayerEventSummary, len(stats))
+	for i := range stats {
+		byName[strings.ToLower(stats[i].Name)] = &stats[i]
 	}
-	wg.Wait()
 
-	// Merge matching players sequentially.
+	c.allStats = stats
+	c.byName = byName
+	c.built = true
+
+	log.Printf("[player-cache] cache built in %s — %d unique players", time.Since(start).Round(time.Millisecond), len(stats))
+	return nil
+}
+
+// GetAll returns aggregated stats for every player across all captures.
+func (c *PlayerCache) GetAll() ([]PlayerEventSummary, error) {
+	if err := c.ensureBuilt(); err != nil {
+		return nil, err
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.allStats, nil
+}
+
+// GetByName returns aggregated stats for a single player (case-insensitive
+// substring match). Returns nil if no player matches.
+func (c *PlayerCache) GetByName(playerName string) (*PlayerEventSummary, error) {
+	if err := c.ensureBuilt(); err != nil {
+		return nil, err
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	normalised := strings.ToLower(playerName)
-	var acc *PlayerEventSummary
 
-	for _, r := range results {
-		for i := range r.players {
-			p := &r.players[i]
-			if !strings.Contains(strings.ToLower(p.Name), normalised) {
-				continue
-			}
+	// Try exact match first.
+	if p, ok := c.byName[normalised]; ok {
+		return p, nil
+	}
 
-			if acc == nil {
-				cp := *p
-				cp.WeaponStats = make([]PlayerWeaponStat, len(p.WeaponStats))
-				_ = copy_weaponStats(cp.WeaponStats, p.WeaponStats)
-				acc = &cp
-				continue
-			}
-
-			acc.KillCount += p.KillCount
-			acc.DeathCount += p.DeathCount
-			acc.TeamKillCount += p.TeamKillCount
-
-			for _, ws := range p.WeaponStats {
-				found := false
-				for j := range acc.WeaponStats {
-					if acc.WeaponStats[j].Weapon == ws.Weapon {
-						acc.WeaponStats[j].Kills += ws.Kills
-						found = true
-						break
-					}
-				}
-				if !found {
-					acc.WeaponStats = append(acc.WeaponStats, ws)
-				}
-			}
+	// Fall back to substring match.
+	for key, p := range c.byName {
+		if strings.Contains(key, normalised) {
+			return p, nil
 		}
 	}
 
-	if acc != nil {
-		sort.Slice(acc.WeaponStats, func(i, j int) bool {
-			return acc.WeaponStats[i].Kills > acc.WeaponStats[j].Kills
-		})
-	}
+	return nil, nil
+}
 
-	return acc, nil
+// Invalidate marks the cache as stale so the next request triggers a rebuild.
+func (c *PlayerCache) Invalidate() {
+	c.mu.Lock()
+	c.built = false
+	c.allStats = nil
+	c.byName = nil
+	c.mu.Unlock()
+	log.Println("[player-cache] cache invalidated")
 }
 
 // ---- HTTP handler ----
@@ -362,7 +408,7 @@ func processPlayerEventsByName(dataDir, playerName string) (*PlayerEventSummary,
 // GetAllPlayerStats handles GET /api/v1/players
 // It aggregates kill/death/weapon statistics for every player across all captures.
 func (h *Handler) GetAllPlayerStats(c echo.Context) error {
-	players, err := processAllPlayerEvents(h.setting.Data)
+	players, err := h.playerCache.GetAll()
 	if err != nil {
 		return fmt.Errorf("process all player events: %w", err)
 	}
@@ -378,7 +424,7 @@ func (h *Handler) GetPlayerStatsByName(c echo.Context) error {
 		return err
 	}
 
-	player, err := processPlayerEventsByName(h.setting.Data, playerName)
+	player, err := h.playerCache.GetByName(playerName)
 	if err != nil {
 		return fmt.Errorf("process player events by name: %w", err)
 	}

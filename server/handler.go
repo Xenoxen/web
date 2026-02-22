@@ -28,6 +28,7 @@ type Handler struct {
 	repoOperation *RepoOperation
 	repoMarker    *RepoMarker
 	repoAmmo      *RepoAmmo
+	playerCache   *PlayerCache
 	setting       Setting
 }
 
@@ -42,6 +43,7 @@ func NewHandler(
 		repoOperation: repoOperation,
 		repoMarker:    repoMarker,
 		repoAmmo:      repoAmmo,
+		playerCache:   NewPlayerCache(setting.Data),
 		setting:       setting,
 	}
 
@@ -227,6 +229,8 @@ func (h *Handler) StoreOperation(c echo.Context) error {
 	if _, err = io.Copy(writer, file); err != nil {
 		return err
 	}
+
+	h.playerCache.Invalidate()
 
 	return c.NoContent(http.StatusOK)
 }

@@ -3,6 +3,7 @@ module github.com/OCAP2/web
 go 1.20
 
 require (
+	github.com/goccy/go-json v0.10.5
 	github.com/labstack/echo/v4 v4.10.2
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/spf13/viper v1.15.0
