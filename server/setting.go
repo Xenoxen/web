@@ -17,8 +17,9 @@ type Setting struct {
 	Maps      string    `json:"maps" yaml:"maps"`
 	Data      string    `json:"data" yaml:"data"`
 	Static    string    `json:"static" yaml:"static"`
-	Logger    bool      `json:"logger" yaml:"logger"`
-	Customize Customize `json:"customize" yaml:"customize"`
+	Logger             bool      `json:"logger" yaml:"logger"`
+	Customize          Customize `json:"customize" yaml:"customize"`
+	OperationTypeBlacklist []string `json:"operationTypeBlacklist" yaml:"operationTypeBlacklist"`
 }
 
 type Customize struct {

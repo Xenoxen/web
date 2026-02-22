@@ -43,7 +43,7 @@ func NewHandler(
 		repoOperation: repoOperation,
 		repoMarker:    repoMarker,
 		repoAmmo:      repoAmmo,
-		playerCache:   NewPlayerCache(setting.Data),
+		playerCache:   NewPlayerCache(setting.Data, setting.OperationTypeBlacklist),
 		setting:       setting,
 	}
 
